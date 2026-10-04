@@ -66,13 +66,16 @@ export async function mainHandler(req, res) {
       return res.status(200).json(strip(data));
     }
     if (req.method === 'DELETE') {
-      const { id } = req.body || {};
+      const { id, permanent } = req.body || {};
       if (!id) return res.status(400).json({ error: 'id required' });
-      const { error } = await supabase.from('profiles').delete().eq('id', id);
-      if (error) {
-        await supabase.from('profiles').update({ active: false }).eq('id', id);
+      if (permanent) {
+        const { error } = await supabase.from('profiles').delete().eq('id', id);
+        if (error) throw error;
+        return res.status(200).json({ ok: true });
       }
-      return res.status(200).json({ ok: true });
+      const { data, error } = await supabase.from('profiles').update({ active: false }).eq('id', id).select().single();
+      if (error) throw error;
+      return res.status(200).json({ ok: true, data });
     }
     return res.status(405).json({ error: 'Method not allowed' });
   } catch (err) {
@@ -83,5 +86,3 @@ export async function mainHandler(req, res) {
 
 export default netlifyAdapter(mainHandler);
 export const handler = netlifyAdapter(mainHandler);
-
-

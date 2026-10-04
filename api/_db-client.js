@@ -175,6 +175,7 @@ async function seedMongoDbIfEmpty(db) {
         if (rowsToInsert && rowsToInsert.length > 0) {
           const clean = rowsToInsert.map((r) => {
             const { _id, ...rest } = r;
+            if (rest.id) rest.id = Number(rest.id) || rest.id;
             return rest;
           });
           await coll.insertMany(clean);
@@ -221,7 +222,7 @@ class MongoQuery {
     if (col === 'id' || col.endsWith('_id')) {
       const num = Number(val);
       if (!isNaN(num)) {
-        this.filter.$or = [{ [col]: num }, { [col]: String(val) }];
+        this.filter[col] = { $in: [num, String(val)] };
       } else {
         this.filter[col] = val;
       }
@@ -231,7 +232,16 @@ class MongoQuery {
     return this;
   }
   neq(col, val) {
-    this.filter[col] = { $ne: val };
+    if (col === 'id' || col.endsWith('_id')) {
+      const num = Number(val);
+      if (!isNaN(num)) {
+        this.filter[col] = { $nin: [num, String(val)] };
+      } else {
+        this.filter[col] = { $ne: val };
+      }
+    } else {
+      this.filter[col] = { $ne: val };
+    }
     return this;
   }
   gte(col, val) {
@@ -294,13 +304,18 @@ class MongoQuery {
     try {
       if (this.op === 'insert') {
         const payloads = Array.isArray(this.insertPayload) ? this.insertPayload : [this.insertPayload];
-        const maxDoc = await coll.find({}, { projection: { id: 1 } }).sort({ id: -1 }).limit(1).toArray();
-        let maxId = (maxDoc.length && Number(maxDoc[0].id)) ? Number(maxDoc[0].id) : 0;
+        const allDocs = await coll.find({}, { projection: { id: 1 } }).toArray();
+        let maxId = 0;
+        allDocs.forEach((d) => {
+          const n = Number(d.id);
+          if (!isNaN(n) && n > maxId) maxId = n;
+        });
 
         const insertedRecords = [];
         for (const p of payloads) {
           maxId++;
-          const record = { id: p.id || maxId, created_at: new Date().toISOString(), ...p };
+          const newId = p.id ? Number(p.id) : maxId;
+          const record = { ...p, id: isNaN(newId) ? maxId : newId, created_at: new Date().toISOString() };
           delete record._id;
           await coll.insertOne(record);
           const { _id, ...clean } = record;
