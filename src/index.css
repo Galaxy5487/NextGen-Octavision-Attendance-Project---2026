@@ -1,0 +1,268 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-display: "Plus Jakarta Sans", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-body: "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+/* ---- Theme Custom Properties ---- */
+:root {
+  --bg-app: #fafafa;
+  --bg-card: #ffffff;
+  --bg-subtle: #f4f4f5;
+  --text-main: #18181b;
+  --text-muted: #52525b;
+  --border-main: #e4e4e7;
+  --accent-primary: #18181b;
+  --accent-hover: #27272a;
+  --accent-text: #ffffff;
+  --accent-light: #f4f4f5;
+  --accent-border: #e4e4e7;
+  color-scheme: light;
+}
+
+html.dark {
+  --bg-app: #09090b;
+  --bg-card: #18181b;
+  --bg-subtle: #27272a;
+  --text-main: #f4f4f5;
+  --text-muted: #a1a1aa;
+  --border-main: #27272a;
+  --accent-primary: #f4f4f5;
+  --accent-hover: #e4e4e7;
+  --accent-text: #09090b;
+  --accent-light: #27272a;
+  --accent-border: #3f3f46;
+  color-scheme: dark;
+}
+
+/* ---- Palette Accents ---- */
+html[data-palette="emerald"] {
+  --accent-primary: #059669;
+  --accent-hover: #047857;
+  --accent-text: #ffffff;
+  --accent-light: #ecfdf5;
+  --accent-border: #a7f3d0;
+}
+html.dark[data-palette="emerald"] {
+  --accent-primary: #10b981;
+  --accent-hover: #059669;
+  --accent-text: #042f2e;
+  --accent-light: #064e3b;
+  --accent-border: #047857;
+}
+
+html[data-palette="indigo"] {
+  --accent-primary: #4f46e5;
+  --accent-hover: #4338ca;
+  --accent-text: #ffffff;
+  --accent-light: #eef2ff;
+  --accent-border: #c7d2fe;
+}
+html.dark[data-palette="indigo"] {
+  --accent-primary: #6366f1;
+  --accent-hover: #4f46e5;
+  --accent-text: #1e1b4b;
+  --accent-light: #312e81;
+  --accent-border: #4338ca;
+}
+
+html[data-palette="amber"] {
+  --accent-primary: #d97706;
+  --accent-hover: #b45309;
+  --accent-text: #ffffff;
+  --accent-light: #fffbeb;
+  --accent-border: #fde68a;
+}
+html.dark[data-palette="amber"] {
+  --accent-primary: #f59e0b;
+  --accent-hover: #d97706;
+  --accent-text: #451a03;
+  --accent-light: #78350f;
+  --accent-border: #b45309;
+}
+
+html[data-palette="rose"] {
+  --accent-primary: #e11d48;
+  --accent-hover: #be123c;
+  --accent-text: #ffffff;
+  --accent-light: #fff1f2;
+  --accent-border: #fecdd3;
+}
+html.dark[data-palette="rose"] {
+  --accent-primary: #f43f5e;
+  --accent-hover: #e11d48;
+  --accent-text: #4c0519;
+  --accent-light: #881337;
+  --accent-border: #be123c;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  font-family: var(--font-body);
+  background-color: var(--bg-app);
+  color: var(--text-main);
+  -webkit-font-smoothing: antialiased;
+  overflow-x: clip;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+img {
+  max-width: 100%;
+}
+
+button, a {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+input, select, textarea {
+  max-width: 100%;
+}
+
+.font-display { font-family: var(--font-display); }
+
+.login-grid-bg {
+  background-image:
+    linear-gradient(rgba(255,255,255,0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.045) 1px, transparent 1px);
+  background-size: 44px 44px;
+}
+
+.dot-bg {
+  background-image: radial-gradient(rgba(0,0,0,0.09) 1px, transparent 1px);
+  background-size: 18px 18px;
+}
+html.dark .dot-bg {
+  background-image: radial-gradient(rgba(255,255,255,0.07) 1px, transparent 1px);
+}
+
+.scroll-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+.scroll-thin::-webkit-scrollbar-thumb { background: #d4d4d8; border-radius: 99px; }
+html.dark .scroll-thin::-webkit-scrollbar-thumb { background: #3f3f46; }
+.scroll-thin::-webkit-scrollbar-track { background: transparent; }
+
+.sheet-cell { min-width: 34px; }
+
+/* Responsive adjustments across devices */
+@media (max-width: 640px) {
+  input, select, textarea { font-size: 16px !important; }
+  .sheet-cell { min-width: 30px; }
+}
+
+@media (min-width: 1920px) {
+  body { font-size: 17px; }
+}
+
+/* Modal safety */
+.fixed.z-50 > form {
+  max-height: 92dvh;
+  overflow-y: auto;
+}
+
+.pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* ---- Dark Mode Scoped Overrides ---- */
+html.dark body {
+  background-color: #09090b !important;
+  color: #f4f4f5 !important;
+}
+
+html.dark .bg-white {
+  background-color: #18181b !important;
+  color: #f4f4f5 !important;
+}
+
+html.dark .bg-zinc-50 {
+  background-color: #121215 !important;
+}
+
+html.dark .bg-zinc-100 {
+  background-color: #27272a !important;
+}
+
+html.dark .bg-zinc-950 {
+  background-color: #09090b !important;
+}
+
+html.dark .border-zinc-200,
+html.dark .border-zinc-300,
+html.dark .border-zinc-100,
+html.dark .border-zinc-50 {
+  border-color: #27272a !important;
+}
+
+html.dark .text-zinc-900,
+html.dark .text-zinc-800,
+html.dark .text-zinc-700 {
+  color: #f4f4f5 !important;
+}
+
+html.dark .text-zinc-600,
+html.dark .text-zinc-500 {
+  color: #a1a1aa !important;
+}
+
+html.dark input,
+html.dark select,
+html.dark textarea {
+  background-color: #18181b !important;
+  color: #f4f4f5 !important;
+  border-color: #3f3f46 !important;
+}
+
+html.dark input:focus,
+html.dark select:focus,
+html.dark textarea:focus {
+  border-color: var(--accent-primary) !important;
+}
+
+/* ---- Light Mode High Contrast Text Overrides ---- */
+html:not(.dark) .text-zinc-400 {
+  color: #52525b;
+}
+
+html:not(.dark) .text-zinc-500 {
+  color: #52525b;
+}
+
+html:not(.dark) .text-zinc-600 {
+  color: #3f3f46;
+}
+
+/* ---- Dynamic Palette Accent Overrides ---- */
+html[data-palette="emerald"] .bg-zinc-900,
+html[data-palette="indigo"] .bg-zinc-900,
+html[data-palette="amber"] .bg-zinc-900,
+html[data-palette="rose"] .bg-zinc-900 {
+  background-color: var(--accent-primary) !important;
+  color: var(--accent-text) !important;
+}
+
+html[data-palette="emerald"] .hover\:bg-zinc-800:hover,
+html[data-palette="emerald"] .hover\:bg-zinc-700:hover,
+html[data-palette="indigo"] .hover\:bg-zinc-800:hover,
+html[data-palette="indigo"] .hover\:bg-zinc-700:hover,
+html[data-palette="amber"] .hover\:bg-zinc-800:hover,
+html[data-palette="amber"] .hover\:bg-zinc-700:hover,
+html[data-palette="rose"] .hover\:bg-zinc-800:hover,
+html[data-palette="rose"] .hover\:bg-zinc-700:hover {
+  background-color: var(--accent-hover) !important;
+}
+
+@media print {
+  .no-print { display: none !important; }
+  body { background: #fff; }
+}

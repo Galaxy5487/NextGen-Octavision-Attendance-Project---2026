@@ -1,0 +1,15 @@
+{
+  "env": {
+    "NEXT_PUBLIC_SUPABASE_URL": "https://kztsphgwobudettagemb.supabase.co",
+    "NEXT_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_qyzo1R4zewhnNlZ2MrVb1w_F-KLiwR5",
+    "VITE_SUPABASE_URL": "https://kztsphgwobudettagemb.supabase.co",
+    "VITE_SUPABASE_ANON_KEY": "sb_publishable_qyzo1R4zewhnNlZ2MrVb1w_F-KLiwR5",
+    "VITE_GOOGLE_CLIENT_ID": "1065078894672-rmp5kp8vfjns5rn9kp5psfp16g691043.apps.googleusercontent.com",
+    "VITE_GOOGLE_AUTH_PROXY": "https://designarena.ai/auth/google/callback",
+    "FULLSTACK_PROJECT_REF": "kztsphgwobudettagemb",
+    "BREVO_SENDER_EMAIL": "octavisionteam@gmail.com",
+    "BREVO_SMTP_USER": "octavisionteam@gmail.com"
+  }
+}
+
+

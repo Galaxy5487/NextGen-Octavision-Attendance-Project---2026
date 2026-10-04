@@ -1,0 +1,31 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+  functions = "api"
+
+[build.environment]
+  NODE_VERSION = "20"
+  SECRETS_SCAN_OMIT_KEYS = "VITE_SUPABASE_ANON_KEY,VITE_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_ANON_KEY,NEXT_PUBLIC_SUPABASE_URL,BREVO_SMTP_USER"
+  NEXT_PUBLIC_SUPABASE_URL = "https://kztsphgwobudettagemb.supabase.co"
+  NEXT_PUBLIC_SUPABASE_ANON_KEY = "sb_publishable_qyzo1R4zewhnNlZ2MrVb1w_F-KLiwR5"
+  VITE_SUPABASE_URL = "https://kztsphgwobudettagemb.supabase.co"
+  VITE_SUPABASE_ANON_KEY = "sb_publishable_qyzo1R4zewhnNlZ2MrVb1w_F-KLiwR5"
+
+
+
+[functions]
+  node_bundler = "esbuild"
+
+# Redirect /api/* to Netlify serverless functions
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/:splat"
+  status = 200
+
+# React Router SPA catch-all redirect
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+
