@@ -662,6 +662,8 @@ const supabase = {
     return createProxyChain(table, realBuilder);
   },
 };
+supabase.default = supabase;
+supabase.supabase = supabase;
 
 export { supabase };
 export default supabase;

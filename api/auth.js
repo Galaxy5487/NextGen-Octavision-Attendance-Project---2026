@@ -1,5 +1,7 @@
-import supabase from './_db-client.js';
+import _dbClient from './_db-client.js';
 import { netlifyAdapter } from './_adapter.js';
+
+const supabase = (_dbClient && typeof _dbClient.from === 'function') ? _dbClient : ((_dbClient && _dbClient.default) || _dbClient);
 
 async function withAvatar(user) {
   const { password: _pw, ...safe } = user;
