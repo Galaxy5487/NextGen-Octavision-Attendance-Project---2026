@@ -53,12 +53,15 @@ export async function mainHandler(req, res) {
         if (error) throw error;
         return res.status(200).json({ ok: true });
       }
-      if (employee_id && clear_all) {
-        const { error } = await supabase.from('warning_logs').delete().eq('employee_id', employee_id);
+      if (clear_all) {
+        let q = supabase.from('warning_logs').delete();
+        if (employee_id) q = q.eq('employee_id', employee_id);
+        else q = q.gt('id', 0);
+        const { error } = await q;
         if (error) throw error;
         return res.status(200).json({ ok: true });
       }
-      return res.status(400).json({ error: 'id required' });
+      return res.status(400).json({ error: 'id or clear_all required' });
     }
     return res.status(405).json({ error: 'Method not allowed' });
   } catch (err) {

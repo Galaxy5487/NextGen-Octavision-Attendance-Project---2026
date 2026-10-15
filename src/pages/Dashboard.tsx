@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import {
   CalendarCheck2, UserCheck, UserX, Plane, ChevronRight, TrendingUp,
   MessagesSquare, ClipboardList, Megaphone, Flame, Award, Clock, Bell,
+  QrCode, Scan, CheckCircle2
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../lib/api';
@@ -25,23 +26,28 @@ export default function Dashboard() {
   const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const loadData = async (silent = false) => {
+    if (!silent && !stats) setLoading(true);
+    try {
+      const [s, t, a, tk, lv] = await Promise.all([
+        api<MonthStats>(`/api/stats?month=${month}`),
+        api<AttendanceRow[]>(`/api/attendance?date=${todayStr()}`),
+        api<Announcement[]>('/api/announcements?limit=4'),
+        api<Task[]>(isHead ? '/api/tasks' : `/api/tasks?assignee_id=${user!.id}`),
+        api<LeaveRequest[]>(isHead ? '/api/leaves?status=pending' : `/api/leaves?employee_id=${user!.id}`),
+      ]);
+      setStats(s); setTodayRows(t); setAnn(a);
+      setTasks(tk);
+      setLeaves(lv);
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
+  };
+
   useEffect(() => {
-    (async () => {
-      setLoading(true);
-      try {
-        const [s, t, a, tk, lv] = await Promise.all([
-          api<MonthStats>(`/api/stats?month=${month}`),
-          api<AttendanceRow[]>(`/api/attendance?date=${todayStr()}`),
-          api<Announcement[]>('/api/announcements?limit=4'),
-          api<Task[]>(isHead ? '/api/tasks' : `/api/tasks?assignee_id=${user!.id}`),
-          api<LeaveRequest[]>(isHead ? '/api/leaves?status=pending' : `/api/leaves?employee_id=${user!.id}`),
-        ]);
-        setStats(s); setTodayRows(t); setAnn(a);
-        setTasks(tk);
-        setLeaves(lv);
-      } catch (e) { console.error(e); }
-      finally { setLoading(false); }
-    })();
+    loadData(false);
+    const onMutate = () => loadData(true);
+    window.addEventListener('ngo:mutation', onMutate);
+    return () => window.removeEventListener('ngo:mutation', onMutate);
   }, []);
 
   const myStat = useMemo(() => stats?.stats.find((s) => s.employee_id === user?.id), [stats, user]);
@@ -53,7 +59,7 @@ export default function Dashboard() {
   const topScorers = useMemo(() => [...(stats?.stats || [])].sort((a, b) => (b.score ?? -1) - (a.score ?? -1)).slice(0, 5), [stats]);
   const empName = (id: number) => stats?.employees.find((e) => e.id === id)?.full_name || `#${id}`;
 
-  if (loading) return (
+  if (loading && !stats) return (
     <div className="flex items-center justify-center py-24">
       <div className="animate-spin h-10 w-10 rounded-full border-4 border-zinc-200 border-t-zinc-900 dark:border-zinc-800 dark:border-t-zinc-100" />
     </div>
@@ -80,11 +86,62 @@ export default function Dashboard() {
             </p>
           </div>
           <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
-            <Link to="/app/sheet" className="rounded-xl bg-white text-zinc-900 text-sm font-extrabold px-5 py-3 hover:bg-zinc-200 transition text-center shadow-md">View Sheet</Link>
-            {isHead && <Link to="/app/mark" className="rounded-xl bg-white/10 hover:bg-white/20 text-white text-sm font-bold px-5 py-3 transition border border-white/20 text-center">Mark Today</Link>}
+            {isHead ? (
+              <>
+                <Link to="/app/qr" className="rounded-xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 text-sm font-extrabold px-5 py-3 transition text-center shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-1.5">
+                  <QrCode size={16} /> QR Kiosk
+                </Link>
+                <Link to="/app/mark" className="rounded-xl bg-white/10 hover:bg-white/20 text-white text-sm font-bold px-4 py-3 transition border border-white/20 text-center">Mark Day</Link>
+                <Link to="/app/sheet" className="rounded-xl bg-white/10 hover:bg-white/20 text-white text-sm font-bold px-4 py-3 transition border border-white/20 text-center">Sheet</Link>
+              </>
+            ) : (
+              <>
+                <Link to="/app/scan" className="rounded-xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 text-sm font-extrabold px-5 py-3 transition text-center shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-1.5">
+                  <Scan size={16} /> Scan Attendance
+                </Link>
+                <Link to="/app/sheet" className="rounded-xl bg-white/10 hover:bg-white/20 text-white text-sm font-bold px-4 py-3 transition border border-white/20 text-center">View Sheet</Link>
+              </>
+            )}
           </div>
         </div>
       </motion.div>
+
+      {/* Member Attendance Quick Banner */}
+      {!isHead && (
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+          className={`rounded-2xl border p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-sm ${
+            todayMap[user?.id || 0] === 'present'
+              ? 'border-emerald-200 dark:border-emerald-800/80 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-100'
+              : 'border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white'
+          }`}
+        >
+          <div className="flex items-center gap-3">
+            <div className={`h-10 w-10 rounded-xl flex items-center justify-center font-bold shrink-0 ${
+              todayMap[user?.id || 0] === 'present' ? 'bg-emerald-500 text-white shadow' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300'
+            }`}>
+              {todayMap[user?.id || 0] === 'present' ? <CheckCircle2 size={20} /> : <Scan size={20} />}
+            </div>
+            <div>
+              <p className="text-xs font-extrabold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+                Today's Attendance Status ({fmtDate(todayStr())})
+              </p>
+              <p className="text-sm font-bold mt-0.5">
+                {todayMap[user?.id || 0] === 'present'
+                  ? 'Checked in as PRESENT today ✅'
+                  : (todayMap[user?.id || 0] ? `Marked as ${todayMap[user?.id || 0].toUpperCase()}` : 'Not marked yet for today')}
+              </p>
+            </div>
+          </div>
+
+          <Link
+            to="/app/scan"
+            className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 font-bold text-xs hover:bg-zinc-800 dark:hover:bg-zinc-100 transition shadow flex items-center justify-center gap-2"
+          >
+            <Scan size={14} />
+            <span>{todayMap[user?.id || 0] === 'present' ? 'Re-scan / Details' : 'Scan Live QR Code'}</span>
+          </Link>
+        </motion.div>
+      )}
 
       {/* Stat tiles */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">

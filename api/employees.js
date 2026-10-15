@@ -10,13 +10,14 @@ export async function mainHandler(req, res) {
   if (req.method === 'OPTIONS') return res.status(204).end();
   try {
     if (req.method === 'GET') {
-      const { data, error } = await supabase.from('profiles').select('*').order('id', { ascending: true });
+      const [{ data, error }, photosRes] = await Promise.all([
+        supabase.from('profiles').select('*').order('id', { ascending: true }),
+        supabase.from('profile_photos').select('user_id,url').catch(() => ({ data: [] })),
+      ]);
       if (error) throw error;
       const photoMap = {};
-      try {
-        const { data: photos } = await supabase.from('profile_photos').select('user_id,url');
-        (photos || []).forEach((p) => { photoMap[p.user_id] = p.url; });
-      } catch {}
+      const photos = (photosRes && photosRes.data) || [];
+      photos.forEach((p) => { photoMap[p.user_id] = p.url; });
       return res.status(200).json((data || []).map((u) => strip(u, photoMap)));
     }
     if (req.method === 'POST') {

@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, CalendarCheck2, CalendarDays, Megaphone, MessagesSquare,
   ClipboardList, Plane, MailWarning, Users, Bell, LogOut, Menu, X, CheckCheck, Settings as SettingsIcon, Trash2, Sun, Moon,
+  QrCode, Scan
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
@@ -14,6 +15,8 @@ import { api } from '../lib/api';
 const NAV = [
   { to: '/app', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/app/sheet', label: 'Attendance Sheet', icon: CalendarCheck2 },
+  { to: '/app/qr', label: 'QR Attendance Kiosk', icon: QrCode, head: true },
+  { to: '/app/scan', label: 'Scan Attendance QR', icon: Scan, emp: true },
   { to: '/app/mark', label: 'Mark Attendance', icon: CalendarDays, head: true },
   { to: '/app/scores', label: 'Scores', icon: ClipboardList, head: true },
   { to: '/app/tasks', label: 'Tasks', icon: ClipboardList, emp: true },
@@ -41,37 +44,43 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const isHead = user?.role === 'head';
 
   const fetchNotifs = async () => {
-    if (!user) return;
+    if (!user || (typeof document !== "undefined" && document.hidden)) return;
     try { setNotifs(await api<Notif[]>(`/api/notifications?user_id=${user.id}&limit=40`)); } catch {}
   };
-  useEffect(() => { fetchNotifs(); const t = setInterval(fetchNotifs, 15000); return () => clearInterval(t); }, [user?.id]);
+  useEffect(() => { fetchNotifs(); const t = setInterval(fetchNotifs, 30000); return () => clearInterval(t); }, [user?.id]);
 
   const unread = notifs.filter((n) => !n.read).length;
 
-  const markAll = async () => {
+  const markAll = () => {
     if (!user) return;
-    await api('/api/notifications', { method: 'PUT', body: { user_id_all: user.id } });
-    fetchNotifs();
+    setNotifs((prev) => prev.map((n) => ({ ...n, read: true })));
+    api('/api/notifications', { method: 'PUT', body: { user_id_all: user.id } }).catch(() => fetchNotifs());
   };
 
-  const deleteNotif = async (id: number) => {
-    try {
-      await api('/api/notifications', { method: 'DELETE', body: { id } });
+  const deleteNotif = (id: number) => {
+    setNotifs((prev) => prev.filter((n) => n.id !== id));
+    api('/api/notifications', { method: 'DELETE', body: { id } }).catch((e: any) => {
       fetchNotifs();
-    } catch (e: any) { alert('Failed to clear reminder: ' + e.message); }
+      alert('Failed to clear reminder: ' + e.message);
+    });
   };
 
-  const clearAllNotifs = async () => {
+  const clearAllNotifs = () => {
     if (!user) return;
     if (!confirm('Clear all notifications & reminders?')) return;
-    try {
-      await api('/api/notifications', { method: 'DELETE', body: { user_id: user.id } });
-      fetchNotifs();
-    } catch (e: any) { alert('Failed to clear reminders: ' + e.message); }
+    const backup = [...notifs];
+    setNotifs([]);
+    api('/api/notifications', { method: 'DELETE', body: { user_id: user.id } }).catch((e: any) => {
+      setNotifs(backup);
+      alert('Failed to clear reminders: ' + e.message);
+    });
   };
 
-  const openNotif = async (n: Notif) => {
-    if (!n.read) { await api('/api/notifications', { method: 'PUT', body: { id: n.id } }); fetchNotifs(); }
+  const openNotif = (n: Notif) => {
+    if (!n.read) {
+      setNotifs((prev) => prev.map((item) => (item.id === n.id ? { ...item, read: true } : item)));
+      api('/api/notifications', { method: 'PUT', body: { id: n.id } }).catch(() => {});
+    }
     setShowNotif(false);
     if (n.link && n.link.startsWith('#')) nav(n.link.slice(1));
   };
@@ -157,6 +166,15 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               <p className="font-display font-bold text-lg leading-tight">Welcome, {user?.full_name?.split(' ')[0]}</p>
             </div>
             <div className="ml-auto flex items-center gap-2">
+              <Link
+                to={isHead ? "/app/qr" : "/app/scan"}
+                title={isHead ? "Open QR Attendance Kiosk" : "Scan Attendance QR"}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-emerald-300 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-xs font-bold transition shadow-sm"
+              >
+                {isHead ? <QrCode size={15} /> : <Scan size={15} />}
+                <span className="hidden xs:inline">{isHead ? "QR Kiosk" : "Scan QR"}</span>
+              </Link>
+
               <button
                 onClick={toggleMode}
                 title={mode === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}

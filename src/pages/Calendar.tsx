@@ -18,10 +18,25 @@ export default function Calendar() {
   const [label, setLabel] = useState('');
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [categoryFilter, setCategoryFilter] = useState<'all' | 'holiday' | 'festival' | 'celebration'>('all');
+  const [categoryFilter, setCategoryFilter] = useState<'all' | 'holiday' | 'festival' | 'celebration'>(() => {
+    try {
+      const saved = localStorage.getItem('ngo_calendar_cat_filter');
+      if (saved && ['all', 'holiday', 'festival', 'celebration'].includes(saved)) {
+        return saved as any;
+      }
+    } catch {}
+    return 'all';
+  });
+
+  const updateCategoryFilter = (cat: 'all' | 'holiday' | 'festival' | 'celebration') => {
+    setCategoryFilter(cat);
+    try {
+      localStorage.setItem('ngo_calendar_cat_filter', cat);
+    } catch {}
+  };
 
   const load = async (m: string) => {
-    setLoading(true);
+    if (!ovs.length) setLoading(true);
     try {
       setOvs(await api<CalendarOverride[]>(`/api/calendar?month=${m}`));
     } catch (e) {
@@ -57,27 +72,44 @@ export default function Calendar() {
   const submitAnnouncement = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedDay || !user) return;
+    const tempId = Date.now();
+    const optimisticOverride: CalendarOverride = {
+      id: tempId,
+      date: selectedDay,
+      kind,
+      label: label.trim() || null,
+      created_by: user.id,
+      announced: true,
+    };
+    const prevOvs = ovs;
+    setOvs((prev) => [...prev.filter((x) => x.date !== selectedDay), optimisticOverride]);
     setBusy(true);
     setMsg(null);
+    const day = selectedDay;
+    const k = kind;
+    setSelectedDay(null);
+
     try {
-      await api('/api/calendar', {
+      const res = await api<{ override?: CalendarOverride }>('/api/calendar', {
         method: 'POST',
         body: {
-          date: selectedDay,
-          kind,
+          date: day,
+          kind: k,
           label: label.trim() || null,
           created_by: user.id,
           announce: true,
         },
       });
+      if (res && res.override) {
+        setOvs((prev) => prev.map((x) => (x.id === tempId ? res.override! : x)));
+      }
       setMsg(
-        kind === 'leave_day'
-          ? `🏖️ ${selectedDay} announced as office leave — attendance updated for everyone.`
-          : `💼 ${selectedDay} announced as working Sunday — attendance will count.`
+        k === 'leave_day'
+          ? `🏖️ ${day} announced as office leave — attendance updated for everyone.`
+          : `💼 ${day} announced as working Sunday — attendance will count.`
       );
-      setSelectedDay(null);
-      await load(month);
     } catch (e: any) {
+      setOvs(prevOvs);
       setMsg('Failed: ' + e.message);
     } finally {
       setBusy(false);
@@ -86,8 +118,15 @@ export default function Calendar() {
 
   const removeOverride = async (o: CalendarOverride) => {
     if (!confirm(`Remove office override for ${o.date}?`)) return;
-    await api('/api/calendar', { method: 'DELETE', body: { id: o.id } });
-    await load(month);
+    const prevOvs = ovs;
+    setOvs((prev) => prev.filter((x) => x.id !== o.id));
+    try {
+      await api('/api/calendar', { method: 'DELETE', body: { id: o.id } });
+      setMsg(`Removed override for ${o.date}.`);
+    } catch (e: any) {
+      setOvs(prevOvs);
+      setMsg('Failed: ' + e.message);
+    }
   };
 
   // Build grid cells
@@ -145,7 +184,7 @@ export default function Calendar() {
       {/* Filter Badges & Legend */}
       <div className="flex flex-wrap items-center gap-2 text-xs font-bold">
         <button
-          onClick={() => setCategoryFilter('all')}
+          onClick={() => updateCategoryFilter('all')}
           className={`px-3.5 py-1.5 rounded-full border transition ${
             categoryFilter === 'all'
               ? 'bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 border-zinc-900 dark:border-zinc-100'
@@ -155,7 +194,7 @@ export default function Calendar() {
           ✨ All Events ({monthEvents.length})
         </button>
         <button
-          onClick={() => setCategoryFilter('holiday')}
+          onClick={() => updateCategoryFilter('holiday')}
           className={`px-3.5 py-1.5 rounded-full border transition ${
             categoryFilter === 'holiday'
               ? 'bg-red-600 text-white border-red-600'
@@ -165,7 +204,7 @@ export default function Calendar() {
           🇮🇳 National Holidays
         </button>
         <button
-          onClick={() => setCategoryFilter('festival')}
+          onClick={() => updateCategoryFilter('festival')}
           className={`px-3.5 py-1.5 rounded-full border transition ${
             categoryFilter === 'festival'
               ? 'bg-amber-500 text-white border-amber-500'

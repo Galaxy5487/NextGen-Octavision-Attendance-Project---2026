@@ -6,6 +6,7 @@ import path from 'path';
 function loadEnv() {
   try {
     const envFiles = ['.env.local', '.env'];
+    const activeKeys = new Set();
     for (const file of envFiles) {
       const envPath = path.resolve(process.cwd(), file);
       if (fs.existsSync(envPath)) {
@@ -17,10 +18,15 @@ function loadEnv() {
           if (idx > 0) {
             const k = trimmed.slice(0, idx).trim();
             const v = trimmed.slice(idx + 1).trim();
-            if (!process.env[k]) process.env[k] = v;
+            activeKeys.add(k);
+            process.env[k] = v;
           }
         }
       }
+    }
+    if (!activeKeys.has('MONGODB_URI')) {
+      delete process.env.MONGODB_URI;
+      delete process.env.VITE_MONGODB_URI;
     }
   } catch {}
 }
@@ -69,6 +75,7 @@ const DEFAULT_DB = {
   attendance: [],
   tasks: [],
   leaves: [],
+  leave_requests: [],
   calendar_overrides: [],
   announcements: [],
   warning_logs: [],
@@ -128,10 +135,26 @@ function writeDb(db) {
   }
 }
 
+// --- Fast In-Memory Query Cache & Global State (Vite SSR Safe) ---
+const g = typeof globalThis !== 'undefined' ? globalThis : {};
+if (!g.__ngo_cache) g.__ngo_cache = new Map();
+const queryCache = g.__ngo_cache;
+const CACHE_TTL_MS = 30000; // 30-second cache with auto-invalidation on any write/update/delete operation
+
+export function invalidateCache(table) {
+  if (!table) {
+    queryCache.clear();
+    return;
+  }
+  for (const k of queryCache.keys()) {
+    if (k.startsWith(`${table}:`)) {
+      queryCache.delete(k);
+    }
+  }
+}
+
 // --- MongoDB Atlas Connection & Query Engine ---
-let mongoClientInstance = null;
-let mongoDbInstance = null;
-let mongoConnectingPromise = null;
+const MONGO_FAILURE_COOLDOWN_MS = 5 * 60 * 1000; // 5-minute circuit breaker after failed attempt
 
 export async function getMongoDb() {
   loadEnv();
@@ -139,29 +162,39 @@ export async function getMongoDb() {
   if (!uri || uri.includes('<username>') || uri.includes('<password>')) {
     return null;
   }
-  if (mongoDbInstance) return mongoDbInstance;
-  if (mongoConnectingPromise) return await mongoConnectingPromise;
+  if (g.__ngo_mongoDb) return g.__ngo_mongoDb;
 
-  mongoConnectingPromise = (async () => {
+  // Circuit breaker: Fail immediately if connection failed recently, avoiding multi-second hangs per query
+  if (Date.now() - (g.__ngo_mongoLastFailure || 0) < MONGO_FAILURE_COOLDOWN_MS) {
+    return null;
+  }
+
+  if (g.__ngo_mongoConnecting) return await g.__ngo_mongoConnecting;
+
+  g.__ngo_mongoConnecting = (async () => {
     try {
-      mongoClientInstance = new MongoClient(uri, {
-        serverSelectionTimeoutMS: 5000,
+      const client = new MongoClient(uri, {
+        serverSelectionTimeoutMS: 1200,
+        connectTimeoutMS: 1200,
       });
-      await mongoClientInstance.connect();
+      await client.connect();
       const dbName = process.env.MONGODB_DB_NAME || 'octavision_attendance';
-      mongoDbInstance = mongoClientInstance.db(dbName);
-      await seedMongoDbIfEmpty(mongoDbInstance);
-      return mongoDbInstance;
+      g.__ngo_mongoDb = client.db(dbName);
+      g.__ngo_mongoLastFailure = 0;
+      // Seed asynchronously in background without blocking initial queries
+      seedMongoDbIfEmpty(g.__ngo_mongoDb).catch(() => {});
+      return g.__ngo_mongoDb;
     } catch (err) {
-      console.warn('MongoDB Atlas connection unavailable, falling back to local store:', err.message);
-      mongoDbInstance = null;
+      console.warn('MongoDB Atlas connection unavailable, falling back to database store:', err.message);
+      g.__ngo_mongoDb = null;
+      g.__ngo_mongoLastFailure = Date.now();
       return null;
     } finally {
-      mongoConnectingPromise = null;
+      g.__ngo_mongoConnecting = null;
     }
   })();
 
-  return await mongoConnectingPromise;
+  return await g.__ngo_mongoConnecting;
 }
 
 async function seedMongoDbIfEmpty(db) {
@@ -527,20 +560,44 @@ function createProxyChain(table, realBuilder) {
       if (prop === 'then') {
         return (onfulfilled, onrejected) => {
           (async () => {
-            // Priority 1: MongoDB Atlas
+            const isSelect = mongo.op === 'select' && local.op === 'select';
+            const cacheKey = isSelect
+              ? `${table}:${JSON.stringify(mongo.filter)}:${JSON.stringify(mongo.sortOpts)}:${mongo.limitVal}:${mongo.isSingle}`
+              : null;
+
+            if (cacheKey) {
+              const hit = queryCache.get(cacheKey);
+              if (hit && Date.now() - hit.time < CACHE_TTL_MS) {
+                return hit.data;
+              }
+            } else {
+              invalidateCache(table);
+            }
+
+            let result = null;
+
+            // Priority 1: MongoDB Atlas (if configured and online)
             const mongoRes = await mongo.execute();
             if (mongoRes !== null) {
-              return mongoRes;
-            }
-            // Priority 2: Real Supabase (if configured and working)
-            if (realBuilder && typeof realBuilder.then === 'function') {
+              result = mongoRes;
+            } else if (realBuilder && typeof realBuilder.then === 'function') {
+              // Priority 2: Real Supabase (if configured and working)
               try {
-                const result = await realBuilder;
-                if (!result.error) return result;
+                const sbRes = await realBuilder;
+                if (!sbRes.error) result = sbRes;
               } catch (e) {}
             }
+
             // Priority 3: Local JSON Store
-            return await local.execute();
+            if (!result) {
+              result = await local.execute();
+            }
+
+            if (cacheKey && result && !result.error) {
+              queryCache.set(cacheKey, { time: Date.now(), data: result });
+            }
+
+            return result;
           })().then(onfulfilled, onrejected);
         };
       }
@@ -582,19 +639,17 @@ function createProxyChain(table, realBuilder) {
   return proxy;
 }
 
-let clientInstance = null;
-
 function getClient() {
-  if (!clientInstance) {
+  if (!g.__ngo_supabaseClient) {
     loadEnv();
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL;
     const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || DEFAULT_SUPABASE_KEY;
 
     try {
-      clientInstance = createClient(url, key);
+      g.__ngo_supabaseClient = createClient(url, key);
     } catch {}
   }
-  return clientInstance;
+  return g.__ngo_supabaseClient;
 }
 
 const supabase = {

@@ -11,6 +11,7 @@ function apiDevServerPlugin(): Plugin {
       // Ensure process.env has .env.local & vercel.json env vars
       try {
         const envLocalPath = path.resolve(process.cwd(), '.env.local');
+        const activeLocalKeys = new Set<string>();
         if (fs.existsSync(envLocalPath)) {
           const lines = fs.readFileSync(envLocalPath, 'utf-8').split('\n');
           for (const line of lines) {
@@ -20,8 +21,13 @@ function apiDevServerPlugin(): Plugin {
             if (idx > 0) {
               const k = trimmed.slice(0, idx).trim();
               const v = trimmed.slice(idx + 1).trim();
-              if (!process.env[k]) process.env[k] = v;
+              activeLocalKeys.add(k);
+              process.env[k] = v;
             }
+          }
+          if (!activeLocalKeys.has('MONGODB_URI')) {
+            delete process.env.MONGODB_URI;
+            delete process.env.VITE_MONGODB_URI;
           }
         }
         const vercelJsonPath = path.resolve(process.cwd(), 'vercel.json');
@@ -129,6 +135,9 @@ export default defineConfig(async ({ mode }) => {
     plugins,
     envPrefix: ['VITE_', 'NEXT_PUBLIC_'],
     define: processEnvDefines,
+    server: {
+      port: 3000,
+    },
   };
 })
 

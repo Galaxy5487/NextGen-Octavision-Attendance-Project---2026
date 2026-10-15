@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Users, Plus, X, Pencil, UserX, UserCheck } from 'lucide-react';
+import { Users, Plus, X, Pencil, UserX, UserCheck, Trash2 } from 'lucide-react';
 import { api } from '../lib/api';
 import type { Profile } from '../lib/types';
 import UserAvatar from '../components/UserAvatar';
@@ -35,19 +35,35 @@ export default function Team() {
     setBusy(true); setErr(null);
     try {
       if (editing) {
-        await api('/api/employees', { method: 'PUT', body: { id: editing.id, full_name: form.full_name.trim(), designation: form.designation.trim(), phone: form.phone.trim(), password: form.password || undefined } });
+        const updated = await api<Profile>('/api/employees', { method: 'PUT', body: { id: editing.id, full_name: form.full_name.trim(), designation: form.designation.trim(), phone: form.phone.trim(), password: form.password || undefined } });
+        setPeople((prev) => prev.map((item) => (item.id === editing.id ? { ...item, ...updated } : item)));
       } else {
-        await api('/api/employees', { method: 'POST', body: { full_name: form.full_name.trim(), email: form.email.trim() || 'octavisionteam@gmail.com', password: form.password || 'Team@26', designation: form.designation.trim(), phone: form.phone.trim(), role: 'employee' } });
+        const created = await api<Profile>('/api/employees', { method: 'POST', body: { full_name: form.full_name.trim(), email: form.email.trim() || 'octavisionteam@gmail.com', password: form.password || 'Team@26', designation: form.designation.trim(), phone: form.phone.trim(), role: 'employee' } });
+        setPeople((prev) => [...prev, created]);
       }
-      setShow(false); load();
+      setShow(false);
     } catch (e: any) { setErr(e.message); }
     finally { setBusy(false); }
   };
 
-  const toggleActive = async (p: Profile) => {
+  const toggleActive = (p: Profile) => {
     if (p.role === 'head') return;
-    await api('/api/employees', { method: p.active ? 'DELETE' : 'PUT', body: p.active ? { id: p.id } : { id: p.id, active: true } });
-    load();
+    const nextActive = !p.active;
+    setPeople((prev) => prev.map((item) => (item.id === p.id ? { ...item, active: nextActive } : item)));
+    api('/api/employees', { method: p.active ? 'DELETE' : 'PUT', body: p.active ? { id: p.id } : { id: p.id, active: true } }).catch((err) => {
+      load();
+      alert('Update failed: ' + err.message);
+    });
+  };
+
+  const permanentDelete = (p: Profile) => {
+    if (p.role === 'head') return;
+    if (!confirm(`Are you sure you want to PERMANENTLY delete "${p.full_name}"? This removes their account completely.`)) return;
+    setPeople((prev) => prev.filter((item) => item.id !== p.id));
+    api('/api/employees', { method: 'DELETE', body: { id: p.id, permanent: true } }).catch((err) => {
+      load();
+      alert('Delete failed: ' + err.message);
+    });
   };
 
   const emps = people.filter((p) => p.role === 'employee');
@@ -85,11 +101,16 @@ export default function Team() {
                 <p className="text-xs text-zinc-500 dark:text-zinc-400">{p.designation}</p>
                 {!p.active && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400">DEACTIVATED</span>}
               </div>
-              <div className="flex gap-1">
+              <div className="flex items-center gap-1">
                 <button onClick={() => openEdit(p)} className="p-2 rounded-lg text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800"><Pencil size={15} /></button>
                 <button onClick={() => toggleActive(p)} title={p.active ? 'Deactivate' : 'Reactivate'} className={`p-2 rounded-lg ${p.active ? 'text-zinc-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40' : 'text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40'}`}>
                   {p.active ? <UserX size={15} /> : <UserCheck size={15} />}
                 </button>
+                {!p.active && (
+                  <button onClick={() => permanentDelete(p)} title="Permanently Delete Profile" className="p-2 rounded-lg text-zinc-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40">
+                    <Trash2 size={15} />
+                  </button>
+                )}
               </div>
             </div>
             <div className="mt-3 rounded-xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-100 dark:border-zinc-800 p-3 text-xs space-y-1">

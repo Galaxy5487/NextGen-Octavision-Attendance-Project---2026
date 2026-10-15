@@ -75,15 +75,17 @@ export async function mainHandler(req, res) {
       const { data: emps } = await supabase.from('profiles').select('*').eq('role', 'employee');
       const empMap = {};
       (emps || []).forEach((e) => { empMap[e.id] = e; });
-      const warnings = [];
-      for (const en of entries) {
-        if (!en.employee_id || !en.status) continue;
-        const { prevStatus } = await upsertRow(en.employee_id, date, en.status, en.note, marked_by);
-        if (en.status === 'absent' && prevStatus !== 'absent' && empMap[en.employee_id]) {
-          const log = await issueAbsenceWarning(empMap[en.employee_id], date, marked_by);
-          if (log) warnings.push(log);
-        }
-      }
+      const entryResults = await Promise.all(
+        entries.map(async (en) => {
+          if (!en.employee_id || !en.status) return null;
+          const { prevStatus } = await upsertRow(en.employee_id, date, en.status, en.note, marked_by);
+          if (en.status === 'absent' && prevStatus !== 'absent' && empMap[en.employee_id]) {
+            return await issueAbsenceWarning(empMap[en.employee_id], date, marked_by);
+          }
+          return null;
+        })
+      );
+      const warnings = entryResults.filter(Boolean);
       return res.status(200).json({ ok: true, saved: entries.length, warnings });
     }
     if (req.method === 'PUT') {
@@ -109,11 +111,23 @@ export async function mainHandler(req, res) {
       return res.status(200).json({ row, warning });
     }
     if (req.method === 'DELETE') {
-      const { id } = req.body || {};
-      if (!id) return res.status(400).json({ error: 'id required' });
-      const { error } = await supabase.from('attendance').delete().eq('id', id);
-      if (error) throw error;
-      return res.status(200).json({ ok: true });
+      const { id, date, employee_id, clear_all_date } = req.body || {};
+      if (id) {
+        const { error } = await supabase.from('attendance').delete().eq('id', id);
+        if (error) throw error;
+        return res.status(200).json({ ok: true });
+      }
+      if (date && clear_all_date) {
+        const { error } = await supabase.from('attendance').delete().eq('date', date);
+        if (error) throw error;
+        return res.status(200).json({ ok: true });
+      }
+      if (date && employee_id) {
+        const { error } = await supabase.from('attendance').delete().eq('date', date).eq('employee_id', employee_id);
+        if (error) throw error;
+        return res.status(200).json({ ok: true });
+      }
+      return res.status(400).json({ error: 'id or date required' });
     }
     return res.status(405).json({ error: 'Method not allowed' });
   } catch (err) {

@@ -20,7 +20,7 @@ export default function Sheet() {
   const [msg, setMsg] = useState<string | null>(null);
 
   const load = async (m: string) => {
-    setLoading(true);
+    if (!stats) setLoading(true);
     try {
       const [s, r] = await Promise.all([
         api<MonthStats>(`/api/stats?month=${m}`),
@@ -56,23 +56,28 @@ export default function Sheet() {
     setPending((p) => ({ ...p, [key]: next }));
   };
 
+  const clearPending = () => {
+    setPending({});
+  };
+
   const saveAll = async () => {
     const keys = Object.keys(pending);
     if (!keys.length) { setEditing(false); return; }
     setSaving(true); setMsg(null);
     try {
-      let warned = 0;
-      for (const key of keys) {
-        const [empId, date] = key.split('|');
-        const existing = rowMap[key];
-        const r = await api<{ row: AttendanceRow; warning: any }>('/api/attendance', {
-          method: 'PUT',
-          body: existing
-            ? { id: existing.id, status: pending[key], marked_by: user!.id }
-            : { employee_id: Number(empId), date, status: pending[key], marked_by: user!.id },
-        });
-        if (r.warning) warned++;
-      }
+      const results = await Promise.all(
+        keys.map(async (key) => {
+          const [empId, date] = key.split('|');
+          const existing = rowMap[key];
+          return api<{ row: AttendanceRow; warning: any }>('/api/attendance', {
+            method: 'PUT',
+            body: existing
+              ? { id: existing.id, status: pending[key], marked_by: user!.id }
+              : { employee_id: Number(empId), date, status: pending[key], marked_by: user!.id },
+          });
+        })
+      );
+      const warned = results.filter((r) => r && r.warning).length;
       setMsg(`Saved ${keys.length} change(s)${warned ? ` · ${warned} absence warning email(s) + chat alert(s) sent` : ''}. Scores updated.`);
       setEditing(false);
       await load(month);
@@ -80,7 +85,7 @@ export default function Sheet() {
     finally { setSaving(false); }
   };
 
-  if (loading) return <div className="flex justify-center py-24"><div className="animate-spin h-10 w-10 rounded-full border-4 border-zinc-200 border-t-zinc-900 dark:border-zinc-800 dark:border-t-zinc-100" /></div>;
+  if (loading && !stats) return <div className="flex justify-center py-24"><div className="animate-spin h-10 w-10 rounded-full border-4 border-zinc-200 border-t-zinc-900 dark:border-zinc-800 dark:border-t-zinc-100" /></div>;
   if (!stats) return <p className="text-center py-20 text-zinc-500 dark:text-zinc-400">Failed to load sheet.</p>;
 
   return (
@@ -104,6 +109,9 @@ export default function Sheet() {
             <button onClick={() => setEditing(true)} className="flex items-center justify-center gap-2 rounded-xl bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 text-sm font-bold px-4 py-2.5 hover:bg-zinc-700 dark:hover:bg-zinc-200 flex-1 sm:flex-none min-h-[44px]"><Pencil size={16} /> Edit Sheet</button>
           ) : (
             <>
+              {Object.keys(pending).length > 0 && (
+                <button onClick={clearPending} className="flex items-center justify-center gap-1.5 rounded-xl border border-red-200 dark:border-red-900/40 bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-300 text-xs font-bold px-3 py-2.5 hover:bg-red-100 min-h-[44px]">Clear Edits</button>
+              )}
               <button onClick={() => { setEditing(false); setPending({}); }} className="flex items-center justify-center gap-2 rounded-xl border border-zinc-300 dark:border-zinc-700 text-zinc-800 dark:text-zinc-200 text-sm font-bold px-4 py-2.5 hover:bg-zinc-100 dark:hover:bg-zinc-800 flex-1 sm:flex-none min-h-[44px]"><X size={16} /> Cancel</button>
               <button onClick={saveAll} disabled={saving} className="flex items-center justify-center gap-2 rounded-xl bg-emerald-600 text-white text-sm font-bold px-4 py-2.5 hover:bg-emerald-700 disabled:opacity-60 flex-1 sm:flex-none min-h-[44px]"><Check size={16} /> {saving ? 'Saving…' : `Save (${Object.keys(pending).length})`}</button>
             </>

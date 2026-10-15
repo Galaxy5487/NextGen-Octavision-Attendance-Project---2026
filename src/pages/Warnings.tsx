@@ -41,21 +41,24 @@ export default function Warnings() {
     finally { setBusy(false); }
   };
 
-  const delWarning = async (e: React.MouseEvent, id: number) => {
+  const delWarning = (e: React.MouseEvent, id: number) => {
     e.stopPropagation();
     if (!confirm('Delete this warning log entry?')) return;
-    try {
-      await api('/api/warnings', { method: 'DELETE', body: { id } });
+    setLogs((prev) => prev.filter((w) => w.id !== id));
+    api('/api/warnings', { method: 'DELETE', body: { id } }).catch((err: any) => {
       load();
-    } catch (err: any) { alert(err.message); }
+      alert(err.message);
+    });
   };
 
-  const clearAllWarnings = async () => {
+  const clearAllWarnings = () => {
     if (!confirm('Are you sure you want to clear warning history?')) return;
-    try {
-      await api('/api/warnings', { method: 'DELETE', body: { employee_id: isHead ? undefined : user!.id, clear_all: true } });
-      load();
-    } catch (err: any) { alert(err.message); }
+    const backup = [...logs];
+    setLogs([]);
+    api('/api/warnings', { method: 'DELETE', body: { employee_id: isHead ? undefined : user!.id, clear_all: true } }).catch((err: any) => {
+      setLogs(backup);
+      alert(err.message);
+    });
   };
 
   const emp = (id: number) => people.find((p) => p.id === id);

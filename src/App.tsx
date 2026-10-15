@@ -15,6 +15,7 @@ import Leaves from './pages/Leaves';
 import Warnings from './pages/Warnings';
 import Team from './pages/Team';
 import Settings from './pages/Settings';
+import QrAttendance from './pages/QrAttendance';
 
 function Guard({ children, head }: { children: React.ReactNode; head?: boolean }) {
   const { user, loading } = useAuth();
@@ -38,6 +39,8 @@ export default function App() {
             <Route path="/app" element={<Guard><Dashboard /></Guard>} />
             <Route path="/app/sheet" element={<Guard><Sheet /></Guard>} />
             <Route path="/app/mark" element={<Guard head><Mark /></Guard>} />
+            <Route path="/app/qr" element={<Guard><QrAttendance /></Guard>} />
+            <Route path="/app/scan" element={<Guard><QrAttendance /></Guard>} />
             <Route path="/app/scores" element={<Guard head><Scores /></Guard>} />
             <Route path="/app/calendar" element={<Guard><Calendar /></Guard>} />
             <Route path="/app/announcements" element={<Guard><Announcements /></Guard>} />

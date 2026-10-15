@@ -20,10 +20,21 @@ export default function Announcements() {
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
   const [busy, setBusy] = useState(false);
-  const [dismissed, setDismissed] = useState<number[]>([]);
+  const [dismissed, setDismissed] = useState<number[]>(() => {
+    try {
+      const saved = localStorage.getItem('ngo_dismissed_announcements');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
 
   const hideAnnouncement = (id: number) => {
-    setDismissed((prev) => [...prev, id]);
+    setDismissed((prev) => {
+      const next = [...prev, id];
+      try { localStorage.setItem('ngo_dismissed_announcements', JSON.stringify(next)); } catch {}
+      return next;
+    });
   };
 
   const filteredList = list.filter((a) => !dismissed.includes(a.id));
@@ -42,25 +53,30 @@ export default function Announcements() {
     if (!title.trim() || !body.trim()) return;
     setBusy(true);
     try {
-      await api('/api/announcements', { method: 'POST', body: { title: title.trim(), body: body.trim(), kind: 'general', created_by: user!.id } });
+      const newAnn = await api<Announcement>('/api/announcements', { method: 'POST', body: { title: title.trim(), body: body.trim(), kind: 'general', created_by: user!.id } });
       setTitle(''); setBody('');
-      await load();
-    } catch (e) { console.error(e); }
+      setList((prev) => [newAnn, ...prev]);
+    } catch (e: any) { alert(e.message || 'Failed to post announcement'); }
     finally { setBusy(false); }
   };
 
-  const del = async (id: number) => {
+  const del = (id: number) => {
     if (!confirm('Delete this announcement?')) return;
-    await api('/api/announcements', { method: 'DELETE', body: { id } });
-    load();
+    setList((prev) => prev.filter((a) => a.id !== id));
+    api('/api/announcements', { method: 'DELETE', body: { id } }).catch((err) => {
+      load();
+      alert('Delete failed: ' + err.message);
+    });
   };
 
   const clearAllAnnouncements = async () => {
     if (!confirm('Clear all announcements for the team?')) return;
+    const backup = [...list];
+    setList([]);
     try {
       await api('/api/announcements', { method: 'DELETE', body: { clear_all: true } });
-      load();
     } catch (e: any) {
+      setList(backup);
       alert('Failed to clear announcements: ' + e.message);
     }
   };

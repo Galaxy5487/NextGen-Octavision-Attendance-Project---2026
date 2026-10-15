@@ -38,33 +38,57 @@ export default function Tasks() {
   };
   useEffect(() => { load(); }, []);
 
-  const move = async (id: number, status: Task['status']) => {
-    await api('/api/tasks', { method: 'PUT', body: { id, status } });
-    load();
-  };
-  const del = async (id: number) => {
-    if (!confirm('Delete this task?')) return;
-    await api('/api/tasks', { method: 'DELETE', body: { id } });
-    load();
-  };
-  const clearDone = async () => {
-    if (!confirm('Clear all completed tasks?')) return;
-    try {
-      await api('/api/tasks', { method: 'DELETE', body: { clear_done: true, assignee_id: isHead ? undefined : user!.id } });
+  const move = (id: number, status: Task['status']) => {
+    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, status } : t)));
+    api('/api/tasks', { method: 'PUT', body: { id, status } }).catch((err) => {
       load();
-    } catch (e: any) { alert(e.message); }
+      alert('Failed to update task: ' + err.message);
+    });
   };
+
+  const del = (id: number) => {
+    if (!confirm('Delete this task?')) return;
+    setTasks((prev) => prev.filter((t) => t.id !== id));
+    api('/api/tasks', { method: 'DELETE', body: { id } }).catch((err) => {
+      load();
+      alert('Failed to delete task: ' + err.message);
+    });
+  };
+
+  const clearDone = () => {
+    if (!confirm('Clear all completed tasks?')) return;
+    const backup = [...tasks];
+    setTasks((prev) => prev.filter((t) => t.status !== 'done'));
+    api('/api/tasks', { method: 'DELETE', body: { clear_done: true, assignee_id: isHead ? undefined : user!.id } }).catch((e: any) => {
+      setTasks(backup);
+      alert('Failed to clear completed tasks: ' + e.message);
+    });
+  };
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.title.trim() || !form.assignee_id) return;
     setBusy(true);
     try {
-      await api('/api/tasks', { method: 'POST', body: { title: form.title.trim(), description: form.description.trim(), assignee_id: Number(form.assignee_id), assigned_by: user!.id, due_date: form.due_date || null, priority: form.priority } });
+      const newTask = await api<Task>('/api/tasks', {
+        method: 'POST',
+        body: {
+          title: form.title.trim(),
+          description: form.description.trim(),
+          assignee_id: Number(form.assignee_id),
+          assigned_by: user!.id,
+          due_date: form.due_date || null,
+          priority: form.priority,
+        },
+      });
       setShow(false);
       setForm({ title: '', description: '', assignee_id: '', due_date: '', priority: 'medium' });
-      load();
-    } catch (err: any) { alert(err.message); }
-    finally { setBusy(false); }
+      setTasks((prev) => [newTask, ...prev]);
+    } catch (err: any) {
+      alert(err.message || 'Failed to assign task');
+    } finally {
+      setBusy(false);
+    }
   };
 
   const name = (id: number) => people.find((p) => p.id === id)?.full_name || `#${id}`;

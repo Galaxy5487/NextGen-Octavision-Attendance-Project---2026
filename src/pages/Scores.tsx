@@ -16,7 +16,7 @@ export default function Scores() {
 
   useEffect(() => {
     (async () => {
-      setLoading(true);
+      if (!stats) setLoading(true);
       try { setStats(await api<MonthStats>(`/api/stats?month=${month}`)); } catch (e) { console.error(e); }
       finally { setLoading(false); }
     })();
@@ -25,20 +25,21 @@ export default function Scores() {
   const submitTask = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!assignFor || !form.title.trim()) return;
-    setBusy(true); setMsg(null);
+    const taskPayload = { title: form.title.trim(), description: form.description.trim(), due_date: form.due_date || null, priority: form.priority, assignee_id: assignFor, assigned_by: user!.id };
+    const emp = stats?.employees.find(e => e.id === assignFor);
+    setAssignFor(null);
+    setForm({ title: '', description: '', due_date: '', priority: 'high' });
+    setMsg(`Assigning task to ${emp?.full_name?.split(' ')[0] || 'employee'}…`);
     try {
       await api('/api/tasks', {
         method: 'POST',
-        body: { title: form.title.trim(), description: form.description.trim(), due_date: form.due_date || null, priority: form.priority, assignee_id: assignFor, assigned_by: user!.id },
+        body: taskPayload,
       });
-      setMsg('Task assigned — the employee has been notified.');
-      setAssignFor(null);
-      setForm({ title: '', description: '', due_date: '', priority: 'high' });
-    } catch (e: any) { setMsg('Failed: ' + e.message); }
-    finally { setBusy(false); }
+      setMsg(`Task assigned to ${emp?.full_name?.split(' ')[0] || 'employee'} — notification sent.`);
+    } catch (e: any) { setMsg('Failed to assign task: ' + e.message); }
   };
 
-  if (loading) return <div className="flex justify-center py-24"><div className="animate-spin h-10 w-10 rounded-full border-4 border-zinc-200 border-t-zinc-900 dark:border-zinc-800 dark:border-t-zinc-100" /></div>;
+  if (loading && !stats) return <div className="flex justify-center py-24"><div className="animate-spin h-10 w-10 rounded-full border-4 border-zinc-200 border-t-zinc-900 dark:border-zinc-800 dark:border-t-zinc-100" /></div>;
   if (!stats) return <p className="text-center py-20 text-zinc-500 dark:text-zinc-400">Failed to load scores.</p>;
 
   const sorted = [...stats.stats].sort((a, b) => (a.score ?? 101) - (b.score ?? 101));

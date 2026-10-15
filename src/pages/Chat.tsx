@@ -32,6 +32,7 @@ export default function Chat() {
 
 
   const loadThreads = async () => {
+    if (typeof document !== "undefined" && document.hidden) return;
     try {
       const p = await api<Profile[]>('/api/employees').catch(() => []);
       const activePeople = (p || []).filter((x) => x.active !== false);
@@ -60,6 +61,7 @@ export default function Chat() {
   }, [user?.id]);
 
   const loadMsgs = async (tid: number) => {
+    if (typeof document !== "undefined" && document.hidden) return;
     try {
       setMsgs(await api<Message[]>(`/api/messages?thread_id=${tid}`));
     } catch {}
@@ -83,15 +85,26 @@ export default function Chat() {
     if (!active || !text.trim() || !user) return;
     const body = text.trim();
     setText('');
+    const tempId = Date.now();
+    const optimisticMsg: Message = {
+      id: tempId,
+      thread_id: active,
+      sender_id: user.id,
+      body,
+      kind: 'chat',
+      created_at: new Date().toISOString(),
+    };
+    setMsgs((prev) => [...prev, optimisticMsg]);
     try {
-      await api('/api/messages', {
+      const savedMsg = await api<Message>('/api/messages', {
         method: 'POST',
         body: { thread_id: active, sender_id: user.id, body },
       });
-      await loadMsgs(active);
+      setMsgs((prev) => prev.map((m) => (m.id === tempId ? savedMsg : m)));
       loadThreads();
     } catch (err) {
       console.error(err);
+      loadMsgs(active);
     }
   };
 
@@ -148,14 +161,17 @@ export default function Chat() {
     }
   };
 
-  const deleteThread = async (id: number) => {
+  const deleteThread = (id: number) => {
     if (!confirm('Delete this conversation and all its messages?')) return;
-    await api('/api/threads', { method: 'DELETE', body: { id } });
+    setThreads((prev) => prev.filter((t) => t.id !== id));
     if (active === id) {
       setActive(null);
       setMsgs([]);
     }
-    loadThreads();
+    api('/api/threads', { method: 'DELETE', body: { id } }).catch((err) => {
+      loadThreads();
+      alert('Failed to delete conversation: ' + err.message);
+    });
   };
 
   const byId = (id: number | null) => people.find((p) => p.id === id);
@@ -183,26 +199,24 @@ export default function Chat() {
     return <Avatar p={other} />;
   };
 
-  const deleteMessage = async (mid: number) => {
+  const deleteMessage = (mid: number) => {
     if (!confirm('Delete this message?')) return;
-    try {
-      await api('/api/messages', { method: 'DELETE', body: { id: mid } });
+    setMsgs((prev) => prev.filter((m) => m.id !== mid));
+    api('/api/messages', { method: 'DELETE', body: { id: mid } }).catch((e: any) => {
       if (active) loadMsgs(active);
-    } catch (e: any) {
       alert('Failed to delete message: ' + e.message);
-    }
+    });
   };
 
-  const clearChat = async () => {
+  const clearChat = () => {
     if (!active) return;
     if (!confirm('Clear all messages in this conversation?')) return;
-    try {
-      await api('/api/messages', { method: 'DELETE', body: { thread_id: active } });
-      loadMsgs(active);
-      loadThreads();
-    } catch (e: any) {
+    const backup = [...msgs];
+    setMsgs([]);
+    api('/api/messages', { method: 'DELETE', body: { thread_id: active } }).catch((e: any) => {
+      setMsgs(backup);
       alert('Failed to clear chat: ' + e.message);
-    }
+    });
   };
 
   const activeThread = threads.find((t) => t.id === active);

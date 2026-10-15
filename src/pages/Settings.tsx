@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Settings as SettingsIcon, Camera, Trash2, CheckCircle2, Save, Lock, User as UserIcon, Loader2, Sun, Moon, Palette, Check } from 'lucide-react';
+import { Settings as SettingsIcon, Camera, Trash2, CheckCircle2, Save, Lock, User as UserIcon, Loader2, Sun, Moon, Palette, Check, Zap, RefreshCw, Database, Activity, RotateCcw } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme, THEME_PALETTES } from '../contexts/ThemeContext';
 import { api } from '../lib/api';
@@ -17,10 +17,50 @@ export default function Settings() {
   const [cf, setCf] = useState('');
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [pwMsg, setPwMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [maintMsg, setMaintMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [pwBusy, setPwBusy] = useState(false);
   const [photoBusy, setPhotoBusy] = useState(false);
+  const [pingMs, setPingMs] = useState<number | null>(null);
+  const [pingStatus, setPingStatus] = useState<string | null>(null);
+  const [pinging, setPinging] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  const runPing = async () => {
+    setPinging(true);
+    const start = performance.now();
+    try {
+      await api('/api/employees?limit=1');
+      const diff = Math.round(performance.now() - start);
+      setPingMs(diff);
+      setPingStatus(diff < 80 ? '⚡ Ultra Fast (In-Memory SWR)' : diff < 400 ? '✅ Fast Response' : '⚠️ Cloud Latency');
+    } catch (e: any) {
+      setPingStatus('Error: ' + e.message);
+    } finally {
+      setPinging(false);
+    }
+  };
+
+  const purgeCache = () => {
+    api.invalidate();
+    window.dispatchEvent(new CustomEvent('ngo:mutation'));
+    setMaintMsg({ ok: true, text: 'Client data cache purged and synchronised with Supabase.' });
+    setTimeout(() => setMaintMsg(null), 4000);
+  };
+
+  const resetLocalPrefs = () => {
+    try {
+      localStorage.removeItem('ngo_dismissed_announcements');
+      localStorage.removeItem('ngo_calendar_cat_filter');
+      localStorage.removeItem('ngo_active_chat_thread');
+      api.invalidate();
+      window.dispatchEvent(new CustomEvent('ngo:mutation'));
+      setMaintMsg({ ok: true, text: 'Filter preferences, dismissed alerts, and active UI sessions reset.' });
+      setTimeout(() => setMaintMsg(null), 4000);
+    } catch (e: any) {
+      setMaintMsg({ ok: false, text: 'Failed to reset preferences: ' + e.message });
+    }
+  };
 
   useEffect(() => {
     if (user) { setName(user.full_name || ''); setDesignation(user.designation || ''); setPhone(user.phone || ''); }
@@ -264,6 +304,76 @@ export default function Settings() {
           {pwBusy ? <Loader2 size={16} className="animate-spin" /> : <Lock size={16} />} {pwBusy ? 'Updating…' : 'Update Password'}
         </button>
       </form>
+
+      {/* System Maintenance & Data Management */}
+      <div className="bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 p-5 sm:p-7 shadow-sm space-y-5">
+        <div>
+          <h2 className="font-display font-extrabold text-lg flex items-center gap-2 text-zinc-900 dark:text-white">
+            <Database size={20} className="text-emerald-500" /> System Performance & Data Management
+          </h2>
+          <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">Manage local browser cache, verify live database connection latency, and reset preference states.</p>
+        </div>
+
+        {maintMsg && (
+          <p className={`text-sm font-semibold rounded-xl px-4 py-3 border flex items-center gap-2 ${maintMsg.ok ? 'text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800' : 'text-red-600 dark:text-red-300 bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-800'}`}>
+            {maintMsg.ok && <CheckCircle2 size={16} />}{maintMsg.text}
+          </p>
+        )}
+
+        {/* Live Latency & Health */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700/60 gap-3">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400">
+              <Activity size={20} />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-zinc-900 dark:text-white">Database & API Health</p>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                {pingMs !== null ? `${pingMs}ms · ${pingStatus}` : 'Test connection latency and roundtrip response time'}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={runPing}
+            disabled={pinging}
+            className="flex items-center justify-center gap-2 rounded-xl bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 text-xs font-bold px-4 py-2.5 hover:bg-zinc-700 dark:hover:bg-zinc-200 disabled:opacity-60 transition min-h-[40px]"
+          >
+            {pinging ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />} {pinging ? 'Testing…' : 'Test Ping'}
+          </button>
+        </div>
+
+        {/* Actions Grid */}
+        <div className="grid sm:grid-cols-2 gap-3 pt-1">
+          <button
+            type="button"
+            onClick={purgeCache}
+            className="flex items-center gap-3 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/40 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-left transition"
+          >
+            <div className="p-2 rounded-xl bg-indigo-100 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400">
+              <RefreshCw size={18} />
+            </div>
+            <div>
+              <p className="font-bold text-xs text-zinc-900 dark:text-white">Purge Client Query Cache</p>
+              <p className="text-[11px] text-zinc-500 dark:text-zinc-400">Forces instant resync of all attendance & task data</p>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={resetLocalPrefs}
+            className="flex items-center gap-3 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/40 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-left transition"
+          >
+            <div className="p-2 rounded-xl bg-amber-100 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400">
+              <RotateCcw size={18} />
+            </div>
+            <div>
+              <p className="font-bold text-xs text-zinc-900 dark:text-white">Reset UI Preferences</p>
+              <p className="text-[11px] text-zinc-500 dark:text-zinc-400">Restores dismissed banners, calendar & chat filters</p>
+            </div>
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

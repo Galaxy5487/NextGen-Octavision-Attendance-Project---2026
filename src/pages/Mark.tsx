@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Send } from 'lucide-react';
+import { CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Send, Trash2, RotateCcw, QrCode } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../lib/api';
 import { fmtDate, todayStr, STATUS_META, type Profile, type AttendanceRow, type CalendarOverride } from '../lib/types';
@@ -25,11 +25,12 @@ export default function Mark() {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
-  const load = async (ds: string) => {
-    setLoading(true); setMsg(null);
+  const load = async (ds: string, initial = false) => {
+    if (initial) setLoading(true);
+    setMsg(null);
     try {
       const [emps, r, ov] = await Promise.all([
-        api<Profile[]>('/api/employees'),
+        employees.length ? Promise.resolve(employees) : api<Profile[]>('/api/employees'),
         api<AttendanceRow[]>(`/api/attendance?date=${ds}`),
         api<CalendarOverride[]>(`/api/calendar?from=${ds}&to=${ds}`),
       ]);
@@ -41,7 +42,7 @@ export default function Mark() {
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   };
-  useEffect(() => { load(date); }, [date]);
+  useEffect(() => { load(date, employees.length === 0); }, [date]);
 
   const dow = useMemo(() => { const [y, m, d] = date.split('-').map(Number); return new Date(y, m - 1, d).getDay(); }, [date]);
   const ov = overrides[0];
@@ -67,7 +68,23 @@ export default function Mark() {
     finally { setSaving(false); }
   };
 
-  if (loading) return <div className="flex justify-center py-24"><div className="animate-spin h-10 w-10 rounded-full border-4 border-zinc-200 border-t-zinc-900 dark:border-zinc-800 dark:border-t-zinc-100" /></div>;
+  const clearDateAttendance = async () => {
+    if (!confirm(`Clear all marked attendance for ${fmtDate(date)}?`)) return;
+    setSaving(true);
+    try {
+      await api('/api/attendance', { method: 'DELETE', body: { date, clear_all_date: true } });
+      setSel({});
+      setNotes({});
+      setRows([]);
+      setMsg(`Cleared all attendance records for ${fmtDate(date)}.`);
+    } catch (e: any) {
+      setMsg('Clear failed: ' + e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading && !employees.length) return <div className="flex justify-center py-24"><div className="animate-spin h-10 w-10 rounded-full border-4 border-zinc-200 border-t-zinc-900 dark:border-zinc-800 dark:border-t-zinc-100" /></div>;
 
   return (
     <div className="space-y-5 max-w-5xl text-zinc-900 dark:text-white">
@@ -90,7 +107,15 @@ export default function Mark() {
             </span>
           )}
           {isSunday && ov?.kind === 'sunday_working' && <span className="text-xs font-bold px-3 py-1.5 rounded-full bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300">💼 Working Sunday</span>}
+          <a href="#/app/qr" className="text-xs font-bold px-3 py-2 rounded-lg bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-100 transition shadow-sm flex items-center gap-1.5">
+            <QrCode size={14} className="text-emerald-400 dark:text-emerald-600" /> Launch QR Kiosk
+          </a>
           <button onClick={() => setAll('present')} className="text-xs font-bold px-3 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700">All Present</button>
+          {rows.length > 0 && (
+            <button onClick={clearDateAttendance} title="Clear attendance marked for this date" className="text-xs font-bold px-3 py-2 rounded-lg border border-red-200 dark:border-red-900/60 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 flex items-center gap-1">
+              <RotateCcw size={13} /> Reset Day
+            </button>
+          )}
           <button onClick={() => setDate(todayStr())} className="text-xs font-bold px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-800 dark:text-zinc-200">Today</button>
         </div>
       </div>

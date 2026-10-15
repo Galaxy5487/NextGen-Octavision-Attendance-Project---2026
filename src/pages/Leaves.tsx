@@ -40,39 +40,41 @@ export default function Leaves() {
     if (!form.from_date || !form.to_date || !form.reason.trim()) return;
     setBusy(true); setMsg(null);
     try {
-      await api('/api/leaves', { method: 'POST', body: { employee_id: user!.id, from_date: form.from_date, to_date: form.to_date, reason: form.reason.trim() } });
+      const newLeave = await api<LeaveRequest>('/api/leaves', { method: 'POST', body: { employee_id: user!.id, from_date: form.from_date, to_date: form.to_date, reason: form.reason.trim() } });
       setMsg('Leave request submitted — your team head will review it.');
       setShow(false);
       setForm({ from_date: '', to_date: '', reason: '' });
-      load();
+      setList((prev) => [newLeave, ...prev]);
     } catch (e: any) { setMsg(e.message); }
     finally { setBusy(false); }
   };
 
-  const decide = async (id: number, status: 'permitted' | 'denied') => {
-    setBusy(true);
-    try {
-      await api('/api/leaves', { method: 'PUT', body: { id, status, decided_by: user!.id } });
-      setMsg(status === 'permitted' ? 'Leave permitted — attendance marked as Permitted (counts toward score).' : 'Leave request denied.');
+  const decide = (id: number, status: 'permitted' | 'denied') => {
+    setList((prev) => prev.map((l) => (l.id === id ? { ...l, status, decided_by: user!.id } : l)));
+    setMsg(status === 'permitted' ? 'Leave permitted — attendance marked as Permitted.' : 'Leave request denied.');
+    api('/api/leaves', { method: 'PUT', body: { id, status, decided_by: user!.id } }).catch((e: any) => {
       load();
-    } catch (e: any) { setMsg(e.message); }
-    finally { setBusy(false); }
+      setMsg('Failed to update leave: ' + e.message);
+    });
   };
 
-  const deleteLeave = async (id: number) => {
+  const deleteLeave = (id: number) => {
     if (!confirm('Delete this leave request?')) return;
-    try {
-      await api('/api/leaves', { method: 'DELETE', body: { id } });
+    setList((prev) => prev.filter((l) => l.id !== id));
+    api('/api/leaves', { method: 'DELETE', body: { id } }).catch((e: any) => {
       load();
-    } catch (e: any) { setMsg(e.message); }
+      setMsg(e.message);
+    });
   };
 
-  const clearProcessed = async () => {
+  const clearProcessed = () => {
     if (!confirm('Clear all decided/processed leave requests?')) return;
-    try {
-      await api('/api/leaves', { method: 'DELETE', body: { clear_processed: true } });
-      load();
-    } catch (e: any) { setMsg(e.message); }
+    const backup = [...list];
+    setList((prev) => prev.filter((l) => l.status === 'pending'));
+    api('/api/leaves', { method: 'DELETE', body: { clear_processed: true } }).catch((e: any) => {
+      setList(backup);
+      setMsg(e.message);
+    });
   };
 
   const name = (id: number) => people.find((p) => p.id === id);
