@@ -1,27 +1,22 @@
 [build]
   command = "npm run build"
   publish = "dist"
-  functions = "api"
 
 [build.environment]
   NODE_VERSION = "20"
-  SECRETS_SCAN_OMIT_KEYS = "VITE_SUPABASE_ANON_KEY,VITE_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_ANON_KEY,NEXT_PUBLIC_SUPABASE_URL,BREVO_SMTP_USER,MONGODB_URI,MONGODB_DB_NAME"
 
-
-
-[functions]
-  node_bundler = "esbuild"
-
-# Redirect /api/* to Netlify serverless functions
+# Reverse Proxy /api/* to Render backend (Zero CORS, same domain)
 [[redirects]]
   from = "/api/*"
-  to = "/.netlify/functions/:splat"
+  to = "https://nextgen-octavision-attendance-i2is.onrender.com/api/:splat"
   status = 200
+  force = true
 
 # React Router SPA catch-all redirect
 [[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
+
 
 

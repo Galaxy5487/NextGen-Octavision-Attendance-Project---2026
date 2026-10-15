@@ -36,10 +36,11 @@ export async function api<T = any>(path: string, options?: ApiOptions): Promise<
   if (!isGet) {
     const baseEndpoint = path.split('?')[0];
     invalidateClientCache(baseEndpoint);
-    if (baseEndpoint.includes('attendance') || baseEndpoint.includes('calendar') || baseEndpoint.includes('leaves') || baseEndpoint.includes('employees')) {
+    if (baseEndpoint.includes('attendance') || baseEndpoint.includes('calendar') || baseEndpoint.includes('leaves') || baseEndpoint.includes('employees') || baseEndpoint.includes('qr')) {
       invalidateClientCache('/api/stats');
       invalidateClientCache('/api/attendance');
       invalidateClientCache('/api/employees');
+      invalidateClientCache('/api/qr');
     }
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('ngo:mutation', { detail: { path, method } }));

@@ -2,11 +2,15 @@ import { MongoClient } from 'mongodb';
 import { createClient } from '@supabase/supabase-js';
 import fs from 'fs';
 import path from 'path';
+import dns from 'dns';
+
+try {
+  dns.setServers(['8.8.8.8', '1.1.1.1']);
+} catch {}
 
 function loadEnv() {
   try {
     const envFiles = ['.env.local', '.env'];
-    const activeKeys = new Set();
     for (const file of envFiles) {
       const envPath = path.resolve(process.cwd(), file);
       if (fs.existsSync(envPath)) {
@@ -18,15 +22,12 @@ function loadEnv() {
           if (idx > 0) {
             const k = trimmed.slice(0, idx).trim();
             const v = trimmed.slice(idx + 1).trim();
-            activeKeys.add(k);
-            process.env[k] = v;
+            if (!process.env[k]) {
+              process.env[k] = v;
+            }
           }
         }
       }
-    }
-    if (!activeKeys.has('MONGODB_URI')) {
-      delete process.env.MONGODB_URI;
-      delete process.env.VITE_MONGODB_URI;
     }
   } catch {}
 }
@@ -154,7 +155,7 @@ export function invalidateCache(table) {
 }
 
 // --- MongoDB Atlas Connection & Query Engine ---
-const MONGO_FAILURE_COOLDOWN_MS = 5 * 60 * 1000; // 5-minute circuit breaker after failed attempt
+const MONGO_FAILURE_COOLDOWN_MS = 10 * 1000; // 10-second circuit breaker after failed attempt
 
 export async function getMongoDb() {
   loadEnv();
@@ -174,8 +175,7 @@ export async function getMongoDb() {
   g.__ngo_mongoConnecting = (async () => {
     try {
       const client = new MongoClient(uri, {
-        serverSelectionTimeoutMS: 1200,
-        connectTimeoutMS: 1200,
+        serverSelectionTimeoutMS: 5000,
       });
       await client.connect();
       const dbName = process.env.MONGODB_DB_NAME || 'octavision_attendance';
@@ -551,9 +551,9 @@ class LocalQuery {
   }
 }
 
-function createProxyChain(table, realBuilder) {
-  const local = new LocalQuery(table);
-  const mongo = new MongoQuery(table);
+function createProxyChain(table, realBuilder, existingMongo, existingLocal) {
+  const local = existingLocal || new LocalQuery(table);
+  const mongo = existingMongo || new MongoQuery(table);
 
   const proxy = new Proxy({}, {
     get(_target, prop) {
@@ -578,7 +578,7 @@ function createProxyChain(table, realBuilder) {
 
             // Priority 1: MongoDB Atlas (if configured and online)
             const mongoRes = await mongo.execute();
-            if (mongoRes !== null) {
+            if (mongoRes !== null && !mongoRes.error) {
               result = mongoRes;
             } else if (realBuilder && typeof realBuilder.then === 'function') {
               // Priority 2: Real Supabase (if configured and working)
@@ -606,7 +606,7 @@ function createProxyChain(table, realBuilder) {
         return (onrejected) => {
           (async () => {
             const mongoRes = await mongo.execute();
-            if (mongoRes !== null) return mongoRes;
+            if (mongoRes !== null && !mongoRes.error) return mongoRes;
             if (realBuilder && typeof realBuilder.catch === 'function') {
               try {
                 const result = await realBuilder;
@@ -631,7 +631,7 @@ function createProxyChain(table, realBuilder) {
             nextReal = realBuilder[prop](...args);
           } catch {}
         }
-        return createProxyChain(table, nextReal);
+        return createProxyChain(table, nextReal, mongo, local);
       };
     },
   });

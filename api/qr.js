@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import supabase from './_db-client.js';
+import supabase, { invalidateCache } from './_db-client.js';
 import { netlifyAdapter } from './_adapter.js';
 
 const QR_SECRET = process.env.QR_SECRET || 'octavision-qr-attendance-key-2026';
@@ -24,6 +24,12 @@ const sessionStore = {
   recentScans: [],  // list of latest scans today
 };
 
+function getDailySalt(date) {
+  const custom = sessionStore.salts.get(date);
+  if (custom) return custom;
+  return crypto.createHmac('sha256', QR_SECRET).update(`salt:${date}`).digest('hex').slice(0, 16);
+}
+
 function getWindowSignature(date, windowIndex, salt) {
   return crypto
     .createHmac('sha256', QR_SECRET)
@@ -41,11 +47,7 @@ function getWindowCode(date, windowIndex, salt) {
 }
 
 function generateSessionToken(date, leaderId) {
-  let salt = sessionStore.salts.get(date);
-  if (!salt) {
-    salt = crypto.randomBytes(8).toString('hex');
-    sessionStore.salts.set(date, salt);
-  }
+  const salt = getDailySalt(date);
   const now = Date.now();
   const currentWindow = getWindow(now);
   const signature = getWindowSignature(date, currentWindow, salt);
@@ -80,12 +82,12 @@ function generateSessionToken(date, leaderId) {
 function verifyTokenOrCode(token, code, today) {
   const now = Date.now();
   const currentWindow = getWindow(now);
-  const salt = sessionStore.salts.get(today) || '';
+  const salt = getDailySalt(today);
 
-  // 1. Verify 6-digit short code (check current window and previous window up to 90s)
+  // 1. Verify 6-digit short code (allow ±2 windows for clock skew and up to 10 past windows for scan delay)
   if (code && typeof code === 'string') {
     const cleanCode = code.trim().toUpperCase();
-    for (let w = currentWindow; w >= currentWindow - 2; w--) {
+    for (let w = currentWindow + 2; w >= currentWindow - 10; w--) {
       const expectedCode = getWindowCode(today, w, salt);
       if (cleanCode === expectedCode) {
         return { valid: true, method: 'code', window: w };
@@ -106,13 +108,13 @@ function verifyTokenOrCode(token, code, today) {
         return { valid: false, error: `QR code expired. Generated for ${payload.date}, but today is ${today}.` };
       }
 
-      // Allow current window and up to 2 past windows (approx 90 seconds tolerance)
+      // Allow current window, forward clock skew up to 2 windows, and up to 10 past windows (~5 mins)
       const windowDiff = currentWindow - payload.w;
-      if (windowDiff < 0 || windowDiff > 2) {
+      if (windowDiff < -2 || windowDiff > 10) {
         return { valid: false, error: 'QR Code has expired. Please scan the current live QR code on screen.' };
       }
 
-      const expectedSig = getWindowSignature(payload.date, payload.w, payload.s);
+      const expectedSig = getWindowSignature(payload.date, payload.w, payload.s || salt);
       if (payload.sig !== expectedSig) {
         return { valid: false, error: 'QR signature verification failed.' };
       }
@@ -293,28 +295,20 @@ export async function mainHandler(req, res) {
         const now = new Date();
         const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
+        const empIdNum = Number(employee_id);
+        const leaderIdNum = Number(leader_id) || 1;
+        const markStatus = status || 'present';
+
         // 3. Check if already marked for today
         const { data: existingRows } = await supabase
           .from('attendance')
           .select('*')
-          .eq('employee_id', employee_id)
+          .eq('employee_id', empIdNum)
           .eq('date', today)
           .limit(1);
 
         const existing = existingRows && existingRows.length ? existingRows[0] : null;
-
-        if (existing && (existing.status === 'present' || existing.status === 'half')) {
-          return res.status(200).json({
-            ok: true,
-            already_marked: true,
-            status: existing.status,
-            date: today,
-            time: existing.note?.includes('at ') ? existing.note.split('at ')[1] : timeStr,
-            message: `You are already checked in as ${existing.status.toUpperCase()} today!`,
-            employee: empData,
-            row: existing,
-          });
-        }
+        const isReMark = Boolean(existing && (existing.status === 'present' || existing.status === 'half'));
 
         const note = `Marked via QR Scan (${verification.method === 'code' ? 'Code Entry' : 'Camera Scan'}) at ${timeStr}`;
         let savedRow = null;
@@ -323,9 +317,9 @@ export async function mainHandler(req, res) {
           const { data, error } = await supabase
             .from('attendance')
             .update({
-              status,
+              status: markStatus,
               note,
-              marked_by: leader_id || 1,
+              marked_by: leaderIdNum,
               updated_at: now.toISOString(),
             })
             .eq('id', existing.id)
@@ -337,11 +331,11 @@ export async function mainHandler(req, res) {
           const { data, error } = await supabase
             .from('attendance')
             .insert({
-              employee_id,
+              employee_id: empIdNum,
               date: today,
-              status,
+              status: markStatus,
               note,
-              marked_by: leader_id || 1,
+              marked_by: leaderIdNum,
             })
             .select()
             .single();
@@ -349,10 +343,14 @@ export async function mainHandler(req, res) {
           savedRow = data;
         }
 
+        // Invalidate attendance and stats in server queryCache
+        invalidateCache('attendance');
+        invalidateCache('stats');
+
         // 4. Send instant confirmation notification
         try {
           await supabase.from('notifications').insert({
-            user_id: employee_id,
+            user_id: empIdNum,
             title: 'Attendance Marked Successfully ✅',
             body: `You checked in as PRESENT today (${today}) at ${timeStr} via Contactless QR.`,
             kind: 'info',
@@ -365,10 +363,10 @@ export async function mainHandler(req, res) {
         return res.status(200).json({
           ok: true,
           already_marked: false,
-          status,
+          status: markStatus,
           date: today,
           time: timeStr,
-          message: 'Attendance marked successfully!',
+          message: isReMark ? 'Check-in time updated successfully!' : 'Attendance marked successfully!',
           employee: empData,
           row: savedRow,
         });
